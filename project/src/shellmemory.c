@@ -9,12 +9,6 @@ struct memory_struct
     char *value;
 };
 
-typedef struct
-{
-    int numOfLines;
-    char *lines[];
-} program;
-
 struct memory_struct shellmemory[MEM_SIZE];
 
 // Helper functions

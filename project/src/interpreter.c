@@ -8,6 +8,8 @@
 #include <sys/wait.h>
 #include "shellmemory.h"
 #include "shell.h"
+#include "pcb.h"
+#include "queue.h"
 
 int MAX_ARGS_SIZE = 3;
 
@@ -36,6 +38,8 @@ int my_touch(char *fName);
 int my_mkdir(char *dirname);
 int my_cd(char *dirname);
 int run(char *input[]);
+int scheduler();
+// int exec(char *scripts, )
 
 // Interpret commands and their arguments
 int interpreter(char *command_args[], int args_size)
@@ -59,6 +63,14 @@ int interpreter(char *command_args[], int args_size)
             return badcommand();
         return help();
     }
+    /*else if (strcmp(command_args[0], "exec" == 0))
+    {
+        if (args_size < 3 || args_size > 5)
+        {
+            return badcommand();
+        }
+        return exec(command_args);
+    }*/
     else if (strcmp(command_args[0], "quit") == 0)
     {
         // quit
@@ -167,33 +179,73 @@ int print(char *var)
     return 0;
 }
 
-int source(char *script) // change it so that it uses the newly created DS
+int scheduler(ready rq)
 {
     int errCode = 0;
-    char line[MAX_USER_INPUT];
-    FILE *p = fopen(script, "rt"); // the program is in a file
 
+    while (rq.head != NULL)
+    {
+        pcb *pcb = rq.head;
+
+        while (pcb->index < pcb->p->numOfLines)
+        {
+            errCode = parseInput(pcb->p->lines[pcb->index]);
+            pcb->index++;
+        }
+
+        // process finished
+        rq.head = pcb->next;
+
+        // cleanup
+        for (int i = 0; i < pcb->p->numOfLines; i++)
+        {
+            free(pcb->p->lines[i]);
+        }
+        free(pcb->p); // ig it has to be a pointer
+        free(pcb);    // by value; same pointer
+    }
+
+    return errCode;
+}
+int source(char *script) // change it so that it uses the newly created DS
+{
+    // 1)loads the file
+    int errCode = 0;
+    char line[MAX_USER_INPUT];
+    FILE *p = fopen(script, "rt");
+    int count = 0;
     if (p == NULL)
     {
         return badcommandFileDoesNotExist();
     }
 
-    fgets(line, MAX_USER_INPUT - 1, p);
-    while (1)
+    while (fgets(line, MAX_USER_INPUT - 1, p) != NULL)
     {
-        errCode = parseInput(line); // which calls interpreter()
-        memset(line, 0, sizeof(line));
-
-        if (feof(p))
-        {
-            break;
-        }
-        fgets(line, MAX_USER_INPUT - 1, p);
+        count++;
     }
-
+    rewind(p);
+    program *p1 = malloc(sizeof(program) + count * sizeof(char *));
+    p1->numOfLines = count;
+    for (int i = 0; i < count; i++)
+    {
+        fgets(line, MAX_USER_INPUT - 1, p);
+        p1->lines[i] = malloc(strlen(line) + 1);
+        strcpy(p1->lines[i], line);
+    } // program loading is complete
     fclose(p);
 
-    return errCode;
+    // 2) now create PCB for the program
+    pcb *pcb1 = malloc(sizeof(pcb));
+    static int pid = 0;
+    pcb1->pid = pid++;
+    pcb1->index = 0;
+    pcb1->p = p1;
+    pcb1->next = NULL;
+    // 3)add it to the queue (will be the only program init)
+    ready rQueue;
+    rQueue.head = pcb1;
+
+    return scheduler(rQueue);
 }
 
 int echo(char *toBeEchoed)
