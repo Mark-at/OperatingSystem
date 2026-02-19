@@ -11,7 +11,7 @@
 #include "pcb.h"
 #include "queue.h"
 
-int MAX_ARGS_SIZE = 3;
+int MAX_ARGS_SIZE = 5;
 
 int badcommand()
 {
@@ -38,8 +38,8 @@ int my_touch(char *fName);
 int my_mkdir(char *dirname);
 int my_cd(char *dirname);
 int run(char *input[]);
-int scheduler();
-// int exec(char *scripts, )
+int scheduler(ready rQ);
+int exec(char *arg[], int argS);
 
 // Interpret commands and their arguments
 int interpreter(char *command_args[], int args_size)
@@ -63,14 +63,28 @@ int interpreter(char *command_args[], int args_size)
             return badcommand();
         return help();
     }
-    /*else if (strcmp(command_args[0], "exec" == 0))
+    else if (strcmp(command_args[0], "exec") == 0)
     {
         if (args_size < 3 || args_size > 5)
         {
             return badcommand();
         }
-        return exec(command_args);
-    }*/
+        if (strcmp(command_args[args_size - 1], "FCFS") == 1 || strcmp(command_args[args_size - 1], "RR") == 1) // for 1.2.2 we just check FCFS
+        {
+            return badcommand();
+        }
+        for (int i = 1; i < args_size - 2; i++)
+        {
+            for (int j = i + 1; j < args_size; j++) // per instruction, if program1 is same as p2, error
+            {
+                if (!strcmp(command_args[i], command_args[j]))
+                {
+                    return badcommand();
+                }
+            }
+        }
+        return exec(command_args, args_size);
+    }
     else if (strcmp(command_args[0], "quit") == 0)
     {
         // quit
@@ -246,6 +260,55 @@ int source(char *script) // change it so that it uses the newly created DS
     rQueue.head = pcb1;
 
     return scheduler(rQueue);
+}
+
+int exec(char *arg[], int argS) // arg would look like [exec, p1, p2, p3, Policy]
+{
+    ready rQ;
+    int num = argS - 2; // sizeof(processes) / sizeof(char *);
+    pcb *l[num];
+    char line[MAX_USER_INPUT];
+    for (int i = 0; i < num; i++)
+    {
+        FILE *p = fopen(arg[i + 1], "rt");
+        int count = 0;
+        if (p == NULL)
+        {
+            return badcommandFileDoesNotExist();
+        }
+
+        while (fgets(line, MAX_USER_INPUT - 1, p) != NULL)
+        {
+            count++;
+        }
+        rewind(p);
+        program *p1 = malloc(sizeof(program) + count * sizeof(char *));
+        p1->numOfLines = count;
+        for (int i = 0; i < count; i++)
+        {
+            fgets(line, MAX_USER_INPUT - 1, p);
+            p1->lines[i] = malloc(strlen(line) + 1);
+            strcpy(p1->lines[i], line);
+        } // program loading is complete
+        fclose(p);
+
+        // 2) now create PCB for the program
+        pcb *pcb1 = malloc(sizeof(pcb));
+        static int pid = 0;
+        pcb1->pid = pid++;
+        pcb1->index = 0; // program counter, current line
+        pcb1->p = p1;
+        pcb1->next = NULL;
+
+        // 3) enqueue (pre)
+        l[i] = pcb1;
+    }
+    rQ.head = l[0];
+    for (int i = 0; i < num - 1; i++)
+    {
+        l[i]->next = l[i + 1];
+    }
+    return scheduler(rQ);
 }
 
 int echo(char *toBeEchoed)
