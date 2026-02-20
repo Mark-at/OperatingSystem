@@ -69,7 +69,7 @@ int interpreter(char *command_args[], int args_size)
         {
             return badcommand();
         }
-        if (strcmp(command_args[args_size - 1], "FCFS") == 1 || strcmp(command_args[args_size - 1], "RR") == 1) // for 1.2.2 we just check FCFS
+        if (strcmp(command_args[args_size - 1], "FCFS") != 0 && strcmp(command_args[args_size - 1], "SJF") != 0 && strcmp(command_args[args_size - 1], "RR") != 0) // for 1.2.2 we just check FCFS
         {
             return badcommand();
         }
@@ -193,8 +193,9 @@ int print(char *var)
     return 0;
 }
 
-int scheduler(ready rq)
+int scheduler(ready rq) // signature should now include PPOLICY, let the scheduler, not exec, decide t=how the queue should be; should also take the list of PCBs
 {
+    // it would make sense for scheduler to make the readyQueue
     int errCode = 0;
 
     while (rq.head != NULL)
@@ -268,12 +269,33 @@ int exec(char *arg[], int argS) // arg would look like [exec, p1, p2, p3, Policy
     int num = argS - 2; // sizeof(processes) / sizeof(char *);
     pcb *l[num];
     char line[MAX_USER_INPUT];
+
     for (int i = 0; i < num; i++)
     {
+        // printf("Opening file index: %d, name: %s\n", i, arg[i + 1]);
         FILE *p = fopen(arg[i + 1], "rt");
         int count = 0;
-        if (p == NULL)
+        if (p == NULL) // if file does not exist, clean up previous pointers then exit
         {
+            for (int j = 0; j < i; j++) // for each pcb
+            {
+                // printf("Cleaning up PCB pointer: %p\n", (void *)l[j]);
+
+                // if (l[j]->p == NULL)
+                // {
+                //     printf("l[%d]->p is NULL\n", j);
+                // }
+                // printf("%d\n", l[j]->p->numOfLines);
+                for (int x = 0; x < l[j]->p->numOfLines; x++)
+                {
+                    // printf("%d\n", l[j]->p->numOfLines); // bad naming: p here is program
+                    free(l[j]->p->lines[x]);
+                }
+                printf("%d\n", l[j]->p->numOfLines);
+
+                free(l[j]->p);
+                free(l[j]);
+            } // have a myFree IMPORTANT
             return badcommandFileDoesNotExist();
         }
 
@@ -281,6 +303,7 @@ int exec(char *arg[], int argS) // arg would look like [exec, p1, p2, p3, Policy
         {
             count++;
         }
+
         rewind(p);
         program *p1 = malloc(sizeof(program) + count * sizeof(char *));
         p1->numOfLines = count;
