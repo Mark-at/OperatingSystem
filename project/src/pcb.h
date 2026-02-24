@@ -2,15 +2,13 @@
 #define PCB_H
 
 #include "shellmemory.h"
-typedef struct
+typedef struct pcb
 {
     int pid; // how to make sure unique pid?
-    // char **p;
     program *p;
-    int index; // program counter
-    struct pcb *next;
-    // delta for later tasks
-    // int numOfLines;
+    int index;        // program counter
+    struct pcb *next; // Use the named struct here
+    int score;
 } pcb;
 
 #endif

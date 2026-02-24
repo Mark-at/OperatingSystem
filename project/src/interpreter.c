@@ -38,8 +38,12 @@ int my_touch(char *fName);
 int my_mkdir(char *dirname);
 int my_cd(char *dirname);
 int run(char *input[]);
-int scheduler(ready rQ);
+int scheduler(char *policy, pcb *pcbList[], int length);
 int exec(char *arg[], int argS);
+void enqueue(ready *rq, pcb *pcb);
+int compSJF(const void *a, const void *b);
+void myFree(pcb *pcb);
+void enqueueAging(ready *rq, pcb *pcb);
 
 // Interpret commands and their arguments
 int interpreter(char *command_args[], int args_size)
@@ -69,7 +73,7 @@ int interpreter(char *command_args[], int args_size)
         {
             return badcommand();
         }
-        if (strcmp(command_args[args_size - 1], "FCFS") != 0 && strcmp(command_args[args_size - 1], "SJF") != 0 && strcmp(command_args[args_size - 1], "RR") != 0) // for 1.2.2 we just check FCFS
+        if (strcmp(command_args[args_size - 1], "FCFS") != 0 && strcmp(command_args[args_size - 1], "SJF") != 0 && strcmp(command_args[args_size - 1], "RR") != 0 && strcmp(command_args[args_size - 1], "AGING") != 0 && strcmp(command_args[args_size - 1], "RR30") != 0) // for 1.2.2 we just check FCFS
         {
             return badcommand();
         }
@@ -193,36 +197,159 @@ int print(char *var)
     return 0;
 }
 
-int scheduler(ready rq) // signature should now include PPOLICY, let the scheduler, not exec, decide t=how the queue should be; should also take the list of PCBs
+void enqueueAging(ready *rq, pcb *p)
+{
+    if (rq->head == NULL || p->score < rq->head->score)
+    {
+        p->next = rq->head;
+        rq->head = p;
+        return;
+    }
+
+    pcb *temp = rq->head;
+    while (temp->next != NULL && temp->next->score <= p->score)
+    {
+        temp = temp->next;
+    }
+    p->next = temp->next;
+    temp->next = p;
+}
+
+void enqueue(ready *rq, pcb *p)
+{
+    p->next = NULL;
+
+    if (rq->head == NULL)
+    {
+        rq->head = p;
+        return;
+    }
+
+    pcb *temp = rq->head;
+    while (temp->next != NULL)
+    {
+        temp = temp->next;
+    }
+    temp->next = (struct pcb *)p; // san chu casts
+}
+
+int scheduler(char *policy, pcb *l[], int length) // signature should now include PPOLICY, let the scheduler, not exec, decide t=how the queue should be; should also take the list of PCBs
 {
     // it would make sense for scheduler to make the readyQueue
     int errCode = 0;
 
-    while (rq.head != NULL)
+    if (strcmp(policy, "SJF") == 0 || strcmp(policy, "AGING") == 0)
+        qsort(l, length, sizeof(pcb *), compSJF);
+
+    ready rq = {l[0]};
+    for (int i = 0; i < length; i++)
     {
-        pcb *pcb = rq.head;
 
-        while (pcb->index < pcb->p->numOfLines)
+        if (i == length - 1)
         {
-            errCode = parseInput(pcb->p->lines[pcb->index]);
-            pcb->index++;
+            l[i]->next = NULL;
         }
-
-        // process finished
-        rq.head = pcb->next;
-
-        // cleanup
-        for (int i = 0; i < pcb->p->numOfLines; i++)
+        else
         {
-            free(pcb->p->lines[i]);
+            l[i]->next = (struct pcb *)l[i + 1];
         }
-        free(pcb->p); // ig it has to be a pointer
-        free(pcb);    // by value; same pointer
     }
 
-    return errCode;
+    if (strcmp(policy, "FCFS") == 0 || strcmp(policy, "SJF") == 0) // one loope for nonpreemptive, then another for preemptive policies
+    {
+
+        while (rq.head != NULL)
+        {
+            pcb *pcb = rq.head;
+
+            while (pcb->index < pcb->p->numOfLines)
+            {
+                errCode = parseInput(pcb->p->lines[pcb->index]);
+                pcb->index++;
+            }
+
+            // process finished
+            rq.head = pcb->next;
+
+            // cleanup
+            for (int i = 0; i < pcb->p->numOfLines; i++)
+            {
+                free(pcb->p->lines[i]);
+            }
+            free(pcb->p); // ig it has to be a pointer
+            free(pcb);    // by value; same pointer
+        }
+
+        return errCode;
+    }
+
+    if (strcmp(policy, "RR") == 0 || strcmp(policy, "RR30") == 0)
+    { // preemptive
+        int lim = 2;
+        if (strcmp(policy, "RR30") == 0)
+        {
+            lim = 30;
+        }
+        while (rq.head != NULL) // as long as queue not empty (program not finished)
+        {
+            pcb *prog = rq.head;
+            for (int i = 0; i < lim; i++) // e
+            {
+                if (prog->index < prog->p->numOfLines) // if still lines to exec
+                {
+                    errCode = parseInput(prog->p->lines[prog->index]);
+                    prog->index++;
+                    if (i == 1)
+                    {
+                        rq.head = prog->next;
+                        enqueue(&rq, prog); // remove it from head and stick it to the tail
+                    }
+                }
+                else
+                {
+                    rq.head = prog->next; // remove
+                    myFree(prog);
+                    break;
+                }
+            }
+        }
+        return errCode;
+    }
+
+    if (strcmp(policy, "AGING") == 0)
+    {
+        while (rq.head != NULL)
+        {
+            pcb *pr = rq.head;
+            // execute 1 ins
+            errCode = parseInput(pr->p->lines[pr->index]);
+            pr->index++;
+            if (pr->index >= pr->p->numOfLines)
+            {
+                // ce programme se termine
+                rq.head = pr->next; // remove
+                myFree(pr);
+            }
+            else
+            {
+                rq.head = pr->next;
+                pr->next = NULL; // need to consider case when queue has only 1 program
+                pcb *temp = rq.head;
+                while (temp != NULL)
+                {
+                    if (temp->score > 0)
+                        temp->score--;
+                    temp = temp->next;
+                }
+                // rq.head = rq.head->next; put removal of current head in enqueueAging
+                enqueueAging(&rq, pr);
+            }
+        }
+        return errCode;
+    }
 }
-int source(char *script) // change it so that it uses the newly created DS
+
+int source(char *script)
 {
     // 1)loads the file
     int errCode = 0;
@@ -260,12 +387,23 @@ int source(char *script) // change it so that it uses the newly created DS
     ready rQueue;
     rQueue.head = pcb1;
 
-    return scheduler(rQueue);
+    pcb *l[] = {pcb1};
+
+    return scheduler("FCFS", l, 1);
 }
 
+void myFree(pcb *pcb)
+{
+    for (int x = 0; x < pcb->p->numOfLines; x++)
+    {
+        free(pcb->p->lines[x]);
+    }
+    free(pcb->p);
+    free(pcb);
+}
 int exec(char *arg[], int argS) // arg would look like [exec, p1, p2, p3, Policy]
 {
-    ready rQ;
+
     int num = argS - 2; // sizeof(processes) / sizeof(char *);
     pcb *l[num];
     char line[MAX_USER_INPUT];
@@ -279,23 +417,8 @@ int exec(char *arg[], int argS) // arg would look like [exec, p1, p2, p3, Policy
         {
             for (int j = 0; j < i; j++) // for each pcb
             {
-                // printf("Cleaning up PCB pointer: %p\n", (void *)l[j]);
-
-                // if (l[j]->p == NULL)
-                // {
-                //     printf("l[%d]->p is NULL\n", j);
-                // }
-                // printf("%d\n", l[j]->p->numOfLines);
-                for (int x = 0; x < l[j]->p->numOfLines; x++)
-                {
-                    // printf("%d\n", l[j]->p->numOfLines); // bad naming: p here is program
-                    free(l[j]->p->lines[x]);
-                }
-                printf("%d\n", l[j]->p->numOfLines);
-
-                free(l[j]->p);
-                free(l[j]);
-            } // have a myFree IMPORTANT
+                myFree(l[j]);
+            }
             return badcommandFileDoesNotExist();
         }
 
@@ -321,17 +444,21 @@ int exec(char *arg[], int argS) // arg would look like [exec, p1, p2, p3, Policy
         pcb1->pid = pid++;
         pcb1->index = 0; // program counter, current line
         pcb1->p = p1;
+        pcb1->score = pcb1->p->numOfLines;
         pcb1->next = NULL;
 
         // 3) enqueue (pre)
         l[i] = pcb1;
-    }
-    rQ.head = l[0];
-    for (int i = 0; i < num - 1; i++)
-    {
-        l[i]->next = l[i + 1];
-    }
-    return scheduler(rQ);
+    } // l now is a list of PCBs
+
+    return scheduler(arg[argS - 1], l, num);
+}
+
+int compSJF(const void *a, const void *b)
+{
+    pcb *pcbA = *(pcb **)a;
+    pcb *pcbB = *(pcb **)b;
+    return pcbA->p->numOfLines - pcbB->p->numOfLines;
 }
 
 int echo(char *toBeEchoed)
@@ -353,7 +480,6 @@ int comp(const void *a, const void *b)
 { // pointer to anything; since a str is alr a pointer, this means arg is a double pointer that must be deferenced
     return strcmp(*(const char **)a, *(const char **)b);
 }
-
 int my_ls()
 {
     DIR *ds = opendir(".");  // open the current dir
