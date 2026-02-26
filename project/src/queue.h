@@ -7,4 +7,7 @@ typedef struct
     pcb *head; // that is all
 } ready;
 
+void enqueueAging(ready *rq, pcb *pcb);
+void enqueue(ready *rq, pcb *pcb);
+
 #endif

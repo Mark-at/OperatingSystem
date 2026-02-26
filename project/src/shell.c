@@ -55,7 +55,7 @@ int wordEnding(char c)
     return c == '\0' || c == '\n' || c == ' ' || c == ';';
 }
 
-int parseInput(char inp[])
+int parseInput(char inp[]) // where inp is the user input (all of em)
 {
     char tmp[200], *words[100];
     int ix = 0, w = 0;
@@ -93,7 +93,7 @@ int parseInput(char inp[])
 
         words[w] = NULL;
         errorCode = interpreter(words, w);
-
+        // if words is exec xx xx Po #, instead of keep reading rest of inp[], pass it to
         if (errorCode != 0)
             return errorCode;
     }

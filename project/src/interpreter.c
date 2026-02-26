@@ -11,7 +11,10 @@
 #include "pcb.h"
 #include "queue.h"
 
-int MAX_ARGS_SIZE = 5;
+int schedulerIsRunning = 0; // if 1, the exec will add more programs to the queue
+int MAX_ARGS_SIZE = 6;
+ready rq;
+int background = 0;
 
 int badcommand()
 {
@@ -40,10 +43,8 @@ int my_cd(char *dirname);
 int run(char *input[]);
 int scheduler(char *policy, pcb *pcbList[], int length);
 int exec(char *arg[], int argS);
-void enqueue(ready *rq, pcb *pcb);
 int compSJF(const void *a, const void *b);
 void myFree(pcb *pcb);
-void enqueueAging(ready *rq, pcb *pcb);
 
 // Interpret commands and their arguments
 int interpreter(char *command_args[], int args_size)
@@ -69,11 +70,20 @@ int interpreter(char *command_args[], int args_size)
     }
     else if (strcmp(command_args[0], "exec") == 0)
     {
-        if (args_size < 3 || args_size > 5)
+        if (args_size < 3 || args_size > 6)
         {
             return badcommand();
         }
-        if (strcmp(command_args[args_size - 1], "FCFS") != 0 && strcmp(command_args[args_size - 1], "SJF") != 0 && strcmp(command_args[args_size - 1], "RR") != 0 && strcmp(command_args[args_size - 1], "AGING") != 0 && strcmp(command_args[args_size - 1], "RR30") != 0) // for 1.2.2 we just check FCFS
+        // if (*command_args[args_size - 1] != '#' && ((command_args[args_size - 1], "FCFS") != 0 && strcmp(command_args[args_size - 1], "SJF") != 0 && strcmp(command_args[args_size - 1], "RR") != 0 && strcmp(command_args[args_size - 1], "AGING") != 0 && strcmp(command_args[args_size - 1], "RR30") != 0)) // for 1.2.2 we just check FCFS
+        // {
+        //     return badcommand();
+        // }
+        if (*command_args[args_size - 1] != '#' &&
+            (strcmp(command_args[args_size - 1], "FCFS") != 0 &&
+             strcmp(command_args[args_size - 1], "SJF") != 0 &&
+             strcmp(command_args[args_size - 1], "RR") != 0 &&
+             strcmp(command_args[args_size - 1], "AGING") != 0 &&
+             strcmp(command_args[args_size - 1], "RR30") != 0))
         {
             return badcommand();
         }
@@ -197,51 +207,26 @@ int print(char *var)
     return 0;
 }
 
-void enqueueAging(ready *rq, pcb *p)
-{
-    if (rq->head == NULL || p->score < rq->head->score)
-    {
-        p->next = rq->head;
-        rq->head = p;
-        return;
-    }
-
-    pcb *temp = rq->head;
-    while (temp->next != NULL && temp->next->score <= p->score)
-    {
-        temp = temp->next;
-    }
-    p->next = temp->next;
-    temp->next = p;
-}
-
-void enqueue(ready *rq, pcb *p)
-{
-    p->next = NULL;
-
-    if (rq->head == NULL)
-    {
-        rq->head = p;
-        return;
-    }
-
-    pcb *temp = rq->head;
-    while (temp->next != NULL)
-    {
-        temp = temp->next;
-    }
-    temp->next = (struct pcb *)p; // san chu casts
-}
-
 int scheduler(char *policy, pcb *l[], int length) // signature should now include PPOLICY, let the scheduler, not exec, decide t=how the queue should be; should also take the list of PCBs
 {
+    schedulerIsRunning = 1;
     // it would make sense for scheduler to make the readyQueue
     int errCode = 0;
 
     if (strcmp(policy, "SJF") == 0 || strcmp(policy, "AGING") == 0)
-        qsort(l, length, sizeof(pcb *), compSJF);
+    {
+        if (background)
+        {
+            qsort(++l, length - 1, sizeof(pcb *), compSJF);
+            l--;
+        }
+        else
+            qsort(l, length, sizeof(pcb *), compSJF);
+    }
+    background = 0; // reset after sorting decision is made
 
-    ready rq = {l[0]};
+    // ready rq = {l[0]}; update during task 1.2.5: make a global readyQ
+    rq.head = l[0];
     for (int i = 0; i < length; i++)
     {
 
@@ -280,10 +265,10 @@ int scheduler(char *policy, pcb *l[], int length) // signature should now includ
             free(pcb);    // by value; same pointer
         }
 
-        return errCode;
+        // return errCode;
     }
 
-    if (strcmp(policy, "RR") == 0 || strcmp(policy, "RR30") == 0)
+    else if (strcmp(policy, "RR") == 0 || strcmp(policy, "RR30") == 0)
     { // preemptive
         int lim = 2;
         if (strcmp(policy, "RR30") == 0)
@@ -299,7 +284,7 @@ int scheduler(char *policy, pcb *l[], int length) // signature should now includ
                 {
                     errCode = parseInput(prog->p->lines[prog->index]);
                     prog->index++;
-                    if (i == 1)
+                    if (i == lim - 1)
                     {
                         rq.head = prog->next;
                         enqueue(&rq, prog); // remove it from head and stick it to the tail
@@ -313,10 +298,10 @@ int scheduler(char *policy, pcb *l[], int length) // signature should now includ
                 }
             }
         }
-        return errCode;
+        // return errCode;
     }
 
-    if (strcmp(policy, "AGING") == 0)
+    else if (strcmp(policy, "AGING") == 0)
     {
         while (rq.head != NULL)
         {
@@ -345,51 +330,10 @@ int scheduler(char *policy, pcb *l[], int length) // signature should now includ
                 enqueueAging(&rq, pr);
             }
         }
-        return errCode;
+        // return errCode;
     }
-}
-
-int source(char *script)
-{
-    // 1)loads the file
-    int errCode = 0;
-    char line[MAX_USER_INPUT];
-    FILE *p = fopen(script, "rt");
-    int count = 0;
-    if (p == NULL)
-    {
-        return badcommandFileDoesNotExist();
-    }
-
-    while (fgets(line, MAX_USER_INPUT - 1, p) != NULL)
-    {
-        count++;
-    }
-    rewind(p);
-    program *p1 = malloc(sizeof(program) + count * sizeof(char *));
-    p1->numOfLines = count;
-    for (int i = 0; i < count; i++)
-    {
-        fgets(line, MAX_USER_INPUT - 1, p);
-        p1->lines[i] = malloc(strlen(line) + 1);
-        strcpy(p1->lines[i], line);
-    } // program loading is complete
-    fclose(p);
-
-    // 2) now create PCB for the program
-    pcb *pcb1 = malloc(sizeof(pcb));
-    static int pid = 0;
-    pcb1->pid = pid++;
-    pcb1->index = 0;
-    pcb1->p = p1;
-    pcb1->next = NULL;
-    // 3)add it to the queue (will be the only program init)
-    ready rQueue;
-    rQueue.head = pcb1;
-
-    pcb *l[] = {pcb1};
-
-    return scheduler("FCFS", l, 1);
+    schedulerIsRunning = 0;
+    return errCode;
 }
 
 void myFree(pcb *pcb)
@@ -404,8 +348,16 @@ void myFree(pcb *pcb)
 int exec(char *arg[], int argS) // arg would look like [exec, p1, p2, p3, Policy]
 {
 
+    static int pid = 0;
+    background = 0;
+    if (strcmp(arg[argS - 1], "#") == 0)
+    {
+        background = 1;
+        argS--; // remove # so policy is now arg[argS-1]
+    }
+
     int num = argS - 2; // sizeof(processes) / sizeof(char *);
-    pcb *l[num];
+    pcb *l[num + 1];    // BC batch process (p0)
     char line[MAX_USER_INPUT];
 
     for (int i = 0; i < num; i++)
@@ -440,7 +392,6 @@ int exec(char *arg[], int argS) // arg would look like [exec, p1, p2, p3, Policy
 
         // 2) now create PCB for the program
         pcb *pcb1 = malloc(sizeof(pcb));
-        static int pid = 0;
         pcb1->pid = pid++;
         pcb1->index = 0; // program counter, current line
         pcb1->p = p1;
@@ -451,6 +402,67 @@ int exec(char *arg[], int argS) // arg would look like [exec, p1, p2, p3, Policy
         l[i] = pcb1;
     } // l now is a list of PCBs
 
+    if (background)
+    {
+        char lineBuf[MAX_USER_INPUT];
+        char *tempLines[1000];
+        int count = 0;
+
+        while (fgets(lineBuf, MAX_USER_INPUT - 1, stdin) != NULL)
+        {
+            tempLines[count++] = strdup(lineBuf); // save each line
+        }
+        program *p0 = malloc(sizeof(program) + count * sizeof(char *));
+        p0->numOfLines = count;
+        for (int i = 0; i < count; i++)
+            p0->lines[i] = tempLines[i]; // already strdup'd
+
+        pcb *pcb0 = malloc(sizeof(pcb));
+        pcb0->pid = pid++;
+        pcb0->index = 0;
+        pcb0->p = p0;
+        pcb0->score = count;
+        pcb0->next = NULL;
+
+        // shift l right and put pcb0 first
+        for (int i = num; i > 0; i--)
+            l[i] = l[i - 1];
+        l[0] = pcb0;
+        num++;
+    }
+
+    if (schedulerIsRunning == 1)
+    {
+        // add the new programs to the queue, make rq visible. and no need to run the scheduler again (it's alr
+        // running that's why you are brought here when seeing the 2nd exec)
+        if (strcmp(arg[argS - 1], "RR") == 0 || strcmp(arg[argS - 1], "RR30") == 0 ||
+            strcmp(arg[argS - 1], "FCFS") == 0)
+        {
+            for (int k = 0; k < num; k++)
+            {
+                enqueue(&rq, l[k]);
+            }
+        }
+
+        if (strcmp(arg[argS - 1], "AGING") == 0 || strcmp(arg[argS - 1], "SJF") == 0)
+        {
+            // Insert in SJF order but don't preempt the currently running head
+            for (int k = 0; k < num; k++)
+            {
+                pcb *p = l[k];
+                // Find position after head, maintaining SJF order
+                pcb *temp = rq.head;
+                while (temp->next != NULL && temp->next->score <= p->score)
+                {
+                    temp = temp->next;
+                }
+                p->next = temp->next;
+                temp->next = p;
+            }
+        }
+        return 0; // success, back the the caller which is scheduler
+    }
+    schedulerIsRunning = 0; // reset
     return scheduler(arg[argS - 1], l, num);
 }
 
@@ -570,4 +582,47 @@ int run(char *input[])
         wait(&status);
     }
     return 0;
+}
+
+int source(char *script)
+{
+    // 1)loads the file
+    int errCode = 0;
+    char line[MAX_USER_INPUT];
+    FILE *p = fopen(script, "rt");
+    int count = 0;
+    if (p == NULL)
+    {
+        return badcommandFileDoesNotExist();
+    }
+
+    while (fgets(line, MAX_USER_INPUT - 1, p) != NULL)
+    {
+        count++;
+    }
+    rewind(p);
+    program *p1 = malloc(sizeof(program) + count * sizeof(char *));
+    p1->numOfLines = count;
+    for (int i = 0; i < count; i++)
+    {
+        fgets(line, MAX_USER_INPUT - 1, p);
+        p1->lines[i] = malloc(strlen(line) + 1);
+        strcpy(p1->lines[i], line);
+    } // program loading is complete
+    fclose(p);
+
+    // 2) now create PCB for the program
+    pcb *pcb1 = malloc(sizeof(pcb));
+    static int pid = 0;
+    pcb1->pid = pid++;
+    pcb1->index = 0;
+    pcb1->p = p1;
+    pcb1->next = NULL;
+    // 3)add it to the queue (will be the only program init)
+    ready rQueue;
+    rQueue.head = pcb1;
+
+    pcb *l[] = {pcb1};
+
+    return scheduler("FCFS", l, 1);
 }

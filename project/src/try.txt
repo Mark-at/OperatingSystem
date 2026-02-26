@@ -1,4 +1,6 @@
+exec p1.txt p2.txt RR #
 echo try1
 echo try2
 echo try3
 echo try4
+exec p1.txt RR
