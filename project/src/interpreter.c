@@ -6,13 +6,16 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <pthread.h>
 #include "shellmemory.h"
 #include "shell.h"
 #include "pcb.h"
 #include "queue.h"
 
+pthread_mutex_t q_mutex;
 int schedulerIsRunning = 0; // if 1, the exec will add more programs to the queue
-int MAX_ARGS_SIZE = 6;
+int MAX_ARGS_SIZE = 7;
+int pendingQuit = 0;
 ready rq;
 int background = 0;
 
@@ -46,6 +49,41 @@ int exec(char *arg[], int argS);
 int compSJF(const void *a, const void *b);
 void myFree(pcb *pcb);
 
+void *worker(void *arg)
+{
+    int lim = 2;
+    if (strcmp((char *)arg, "RR30") == 0)
+    {
+        lim = 30;
+    }
+    pthread_mutex_lock(&q_mutex);
+    while (rq.head != NULL) // as long as queue not empty (program not finished)
+    {
+        pcb *prog = rq.head;
+        rq.head = prog->next;
+        pthread_mutex_unlock(&q_mutex);
+        for (int i = 0; i < lim; i++) // e
+        {
+            if (prog->index < prog->p->numOfLines) // if still lines to exec
+            {
+                parseInput(prog->p->lines[prog->index]);
+                prog->index++;
+                if (i == lim - 1)
+                {
+                    pthread_mutex_lock(&q_mutex);
+                    enqueue(&rq, prog); // remove it from head and stick it to the tail
+                    pthread_mutex_unlock(&q_mutex);
+                }
+            }
+            else
+            {
+                myFree(prog);
+                break;
+            }
+        }
+    }
+    return NULL;
+}
 // Interpret commands and their arguments
 int interpreter(char *command_args[], int args_size)
 {
@@ -78,7 +116,7 @@ int interpreter(char *command_args[], int args_size)
         // {
         //     return badcommand();
         // }
-        if (*command_args[args_size - 1] != '#' &&
+        if (*command_args[args_size - 1] != '#' && strcmp(command_args[args_size - 1], "MT") != 0 &&
             (strcmp(command_args[args_size - 1], "FCFS") != 0 &&
              strcmp(command_args[args_size - 1], "SJF") != 0 &&
              strcmp(command_args[args_size - 1], "RR") != 0 &&
@@ -226,10 +264,10 @@ int scheduler(char *policy, pcb *l[], int length) // signature should now includ
     background = 0; // reset after sorting decision is made
 
     // ready rq = {l[0]}; update during task 1.2.5: make a global readyQ
-    rq.head = l[0];
+
+    rq.head = l[0]; // create the queue
     for (int i = 0; i < length; i++)
     {
-
         if (i == length - 1)
         {
             l[i]->next = NULL;
@@ -345,11 +383,21 @@ void myFree(pcb *pcb)
     free(pcb->p);
     free(pcb);
 }
-int exec(char *arg[], int argS) // arg would look like [exec, p1, p2, p3, Policy]
-{
 
+int exec(char *arg[], int argS) // arg would look like [exec, p1, p2, p3, Policy, #, MT]
+{
+    /// where num is num of programs
     static int pid = 0;
+    int isMT = 0;
     background = 0;
+
+    // Check for MT at the end first
+    if (strcmp(arg[argS - 1], "MT") == 0)
+    {
+        isMT = 1;
+        argS--; // remove MT, now check for # or policy
+    }
+
     if (strcmp(arg[argS - 1], "#") == 0)
     {
         background = 1;
@@ -357,7 +405,7 @@ int exec(char *arg[], int argS) // arg would look like [exec, p1, p2, p3, Policy
     }
 
     int num = argS - 2; // sizeof(processes) / sizeof(char *);
-    pcb *l[num + 1];    // BC batch process (p0)
+    pcb *l[num + 1];    // when there is batch process (p0)
     char line[MAX_USER_INPUT];
 
     for (int i = 0; i < num; i++)
@@ -463,6 +511,34 @@ int exec(char *arg[], int argS) // arg would look like [exec, p1, p2, p3, Policy
         return 0; // success, back the the caller which is scheduler
     }
     schedulerIsRunning = 0; // reset
+
+    if (isMT)
+    {
+        // Policy is now at arg[argS - 1] since MT was already removed
+        char *Policy = arg[argS - 1];
+
+        // use pthread , make the queue here to pass in worker
+        rq.head = l[0]; // create the queue
+        for (int i = 0; i < num; i++)
+        {
+            if (i == num - 1)
+            {
+                l[i]->next = NULL;
+            }
+            else
+            {
+                l[i]->next = (struct pcb *)l[i + 1];
+            }
+        }
+        schedulerIsRunning = 1;
+        pthread_t t1, t2;
+        pthread_mutex_init(&q_mutex, NULL);
+        pthread_create(&t1, NULL, worker, Policy);
+        pthread_create(&t2, NULL, worker, Policy);
+        pthread_join(t1, NULL);
+        pthread_join(t2, NULL);
+        return 0;
+    }
     return scheduler(arg[argS - 1], l, num);
 }
 
