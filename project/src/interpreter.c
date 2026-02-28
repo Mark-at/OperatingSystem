@@ -245,7 +245,7 @@ int print(char *var)
     return 0;
 }
 
-int scheduler(char *policy, pcb *l[], int length) // signature should now include PPOLICY, let the scheduler, not exec, decide t=how the queue should be; should also take the list of PCBs
+int scheduler(char *policy, pcb *l[], int length) // signature should now include PPOLICY, let the scheduler, not exec, decide how the queue should be; should also take the list of PCBs
 {
     schedulerIsRunning = 1;
     // it would make sense for scheduler to make the readyQueue
@@ -262,8 +262,6 @@ int scheduler(char *policy, pcb *l[], int length) // signature should now includ
             qsort(l, length, sizeof(pcb *), compSJF);
     }
     background = 0; // reset after sorting decision is made
-
-    // ready rq = {l[0]}; update during task 1.2.5: make a global readyQ
 
     rq.head = l[0]; // create the queue
     for (int i = 0; i < length; i++)
@@ -295,15 +293,8 @@ int scheduler(char *policy, pcb *l[], int length) // signature should now includ
             rq.head = pcb->next;
 
             // cleanup
-            for (int i = 0; i < pcb->p->numOfLines; i++)
-            {
-                free(pcb->p->lines[i]);
-            }
-            free(pcb->p); // ig it has to be a pointer
-            free(pcb);    // by value; same pointer
+            myFree(pcb);
         }
-
-        // return errCode;
     }
 
     else if (strcmp(policy, "RR") == 0 || strcmp(policy, "RR30") == 0)
@@ -336,7 +327,6 @@ int scheduler(char *policy, pcb *l[], int length) // signature should now includ
                 }
             }
         }
-        // return errCode;
     }
 
     else if (strcmp(policy, "AGING") == 0)
@@ -349,7 +339,7 @@ int scheduler(char *policy, pcb *l[], int length) // signature should now includ
             pr->index++;
             if (pr->index >= pr->p->numOfLines)
             {
-                // ce programme se termine
+                // the program finishes
                 rq.head = pr->next; // remove
                 myFree(pr);
             }
@@ -364,8 +354,7 @@ int scheduler(char *policy, pcb *l[], int length) // signature should now includ
                         temp->score--;
                     temp = temp->next;
                 }
-                // rq.head = rq.head->next; put removal of current head in enqueueAging
-                enqueueAging(&rq, pr);
+                enqueueAging(&rq, pr); // removes from head and enqueues it
             }
         }
         // return errCode;
@@ -395,17 +384,17 @@ int exec(char *arg[], int argS) // arg would look like [exec, p1, p2, p3, Policy
     if (strcmp(arg[argS - 1], "MT") == 0)
     {
         isMT = 1;
-        argS--; // remove MT, now check for # or policy
+        argS--;
     }
 
     if (strcmp(arg[argS - 1], "#") == 0)
     {
         background = 1;
-        argS--; // remove # so policy is now arg[argS-1]
+        argS--;
     }
 
-    int num = argS - 2; // sizeof(processes) / sizeof(char *);
-    pcb *l[num + 1];    // when there is batch process (p0)
+    int num = argS - 2;
+    pcb *l[num + 1]; // 1 is for when there is batch process (p0)
     char line[MAX_USER_INPUT];
 
     for (int i = 0; i < num; i++)
@@ -481,7 +470,7 @@ int exec(char *arg[], int argS) // arg would look like [exec, p1, p2, p3, Policy
 
     if (schedulerIsRunning == 1)
     {
-        // add the new programs to the queue, make rq visible. and no need to run the scheduler again (it's alr
+        // add the new programs to the queue, make rq visible globally. and no need to run the scheduler again (it's alr
         // running that's why you are brought here when seeing the 2nd exec)
         if (strcmp(arg[argS - 1], "RR") == 0 || strcmp(arg[argS - 1], "RR30") == 0 ||
             strcmp(arg[argS - 1], "FCFS") == 0)
@@ -508,13 +497,12 @@ int exec(char *arg[], int argS) // arg would look like [exec, p1, p2, p3, Policy
                 temp->next = p;
             }
         }
-        return 0; // success, back the the caller which is scheduler
+        return 0; // on success, back the the caller which is scheduler
     }
     schedulerIsRunning = 0; // reset
 
     if (isMT)
     {
-        // Policy is now at arg[argS - 1] since MT was already removed
         char *Policy = arg[argS - 1];
 
         // use pthread , make the queue here to pass in worker
@@ -694,9 +682,9 @@ int source(char *script)
     pcb1->index = 0;
     pcb1->p = p1;
     pcb1->next = NULL;
-    // 3)add it to the queue (will be the only program init)
-    ready rQueue;
-    rQueue.head = pcb1;
+    // // 3)add it to the queue (will be the only program init)
+    // ready rQueue;
+    // rQueue.head = pcb1;
 
     pcb *l[] = {pcb1};
 

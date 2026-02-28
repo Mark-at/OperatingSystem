@@ -1,9 +1,6 @@
 #include "queue.h"
 #include <stdio.h>
 
-// create()
-
-// destroy()
 void enqueueAging(ready *rq, pcb *p) // for SJF and Aging (in SJF, by default the score is length)
 {
     if (rq->head == NULL || p->score <= rq->head->score) // 1)for queue w/ 1 pcb, 2) for tie
