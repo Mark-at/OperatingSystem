@@ -1,3 +1,2 @@
-
-No particular things to pay attention to.
-I did not create additional header files. All code is in interpreter.c and shell.c
+HongYi Ye 261177801
+I used my own code from assignment 1 and not the provided A1 solution. No other things to pay attention to. 

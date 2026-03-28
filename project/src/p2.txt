@@ -1,4 +1,0 @@
-echo mark
-echo mark
-echo mark
-echo mark
