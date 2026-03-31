@@ -6,8 +6,6 @@
 #include "interpreter.h"
 #include "shellmemory.h"
 
-//  change it so that it loads the script into Program struct, add program to the head of ready queue
-
 int parseInput(char ui[]);
 
 // Start of everything

@@ -18,7 +18,7 @@ int MAX_ARGS_SIZE = 7;
 ready rq;
 int background = 0;
 
-int t = 1;
+int t = 1; // global time
 
 int badcommand()
 {
@@ -115,10 +115,6 @@ int interpreter(char *command_args[], int args_size)
         {
             return badcommand();
         }
-        // if (*command_args[args_size - 1] != '#' && ((command_args[args_size - 1], "FCFS") != 0 && strcmp(command_args[args_size - 1], "SJF") != 0 && strcmp(command_args[args_size - 1], "RR") != 0 && strcmp(command_args[args_size - 1], "AGING") != 0 && strcmp(command_args[args_size - 1], "RR30") != 0)) // for 1.2.2 we just check FCFS
-        // {
-        //     return badcommand();
-        // }
         if (*command_args[args_size - 1] != '#' && strcmp(command_args[args_size - 1], "MT") != 0 &&
             (strcmp(command_args[args_size - 1], "FCFS") != 0 &&
              strcmp(command_args[args_size - 1], "SJF") != 0 &&
@@ -137,7 +133,7 @@ int interpreter(char *command_args[], int args_size)
         //             return badcommand();
         //         }
         //     }
-        // }
+        // } //for A3 we  allow exec p1 p1 RR, so this check is commented out.
         return exec(command_args, args_size);
     }
     else if (strcmp(command_args[0], "quit") == 0)
@@ -260,7 +256,6 @@ int print(char *var)
 int scheduler(char *policy, pcb *l[], int length) // signature should now include PPOLICY, let the scheduler, not exec, decide how the queue should be; should also take the list of PCBs
 {
     schedulerIsRunning = 1;
-    // it would make sense for scheduler to make the readyQueue
     int errCode = 0;
 
     if (strcmp(policy, "SJF") == 0 || strcmp(policy, "AGING") == 0)
@@ -322,14 +317,16 @@ int scheduler(char *policy, pcb *l[], int length) // signature should now includ
             pcb *prog = rq.head;
             for (int i = 0; i < lim; i++) // time slice
             {
-                if (prog->index < prog->numOfCmd) // if still has lines to exec
+                if (prog->index < prog->numOfCmd) // if still has lines to execute
                 {
                     ind = prog->pageTable[(prog->index) / 3];
                     if (ind == -1) // page not found
                     {
                         // fetch:
+                        // note: having talked with Mansi, I decided not to use backing store; whenever
+                        // there is a page fault, the program file is opened again and the program lines are loaded into pages
                         FILE *f = fopen(prog->fileName, "rt");
-                        char *triplet[3];
+                        char *triplet[3]; // triplet stores the 3 lines that make up 1 page
                         char buf[1024];
                         for (int j = 0; j < prog->index; j++)
                         {
@@ -339,23 +336,23 @@ int scheduler(char *policy, pcb *l[], int length) // signature should now includ
                         {
                             if (fgets(buf, MAX_USER_INPUT - 1, f) != NULL)
                             {
-                                triplet[off] = strdup(buf); //?
+                                triplet[off] = strdup(buf);
                             }
                             else
                             {
                                 triplet[off] = strdup("");
                             }
                         }
-                        if (hasNoSpace())
+                        if (hasNoSpace()) // if, at the same time as the page fault, there exist no free space in FrameStore
                         {
                             printf("Page fault! Victim page contents:\n");
                             printf("\n");
-                            int f = fS_evict();
+                            int f = fS_evict(); // evict using LRU. an index is returned bc we need to locate that newly-freed page
                             printf("\n");
 
                             pcb *temp = rq.head;
                             while (temp != NULL)
-                            {
+                            { // update page table of other programs if its entry points to the page we just evicted
                                 for (int i = 0; i < (temp->numOfCmd + 2) / 3; i++)
                                 {
                                     if (temp->pageTable[i] == f)
@@ -367,12 +364,12 @@ int scheduler(char *policy, pcb *l[], int length) // signature should now includ
                             }
                             printf("End of victim page contents.\n");
                         }
-                        else
+                        else // if instead there is space, no need to evict
                         {
                             printf("Page fault!\n");
                         }
-                        prog->pageTable[(prog->index) / 3] = fS_set_value(triplet);
-                        char *warm = fS_getter(prog->pageTable[(prog->index) / 3], t);
+                        prog->pageTable[(prog->index) / 3] = fS_set_value(triplet);    // fetch the page needed and update the program's pT
+                        char *warm = fS_getter(prog->pageTable[(prog->index) / 3], t); // so that we don't immediately evict the page we just moved into fS due to LRU
                         free(warm);
                         t++;
 
@@ -381,12 +378,10 @@ int scheduler(char *policy, pcb *l[], int length) // signature should now includ
                         fclose(f);
                         break;
                     }
-
+                    // if no page fault, simply get the content of the page and execute
                     char *cmd = fS_getter(ind + prog->index % 3, t);
                     t++;
-                    // char *cmd = fS_getter(prog->pageTable[(prog->index) / 3] + prog->index % 3);
                     errCode = parseInput(cmd);
-                    // errCode = parseInput(prog->p->lines[prog->index]);
                     prog->index++;
                     if (i == lim - 1)
                     {
@@ -476,16 +471,15 @@ int exec(char *arg[], int argS) // arg would look like [exec, p1, p2, p3, Policy
         {
             if (strcmp(arg[i + 1], arg[j + 1]) == 0)
             {
-                // pcb *pcbDup = l[j];
                 pcb pcbDup = *l[j];
                 l[i] = &pcbDup;
                 proceed = 1;
                 break;
             }
         }
-        if (proceed == 1)
+        if (proceed == 1) // proceed is 1 if we have 2 identical programs in exec
         {
-            continue;
+            continue; // skipping the file loading below since we share memory
         }
 
         FILE *f = fopen(arg[i + 1], "rt");
@@ -494,7 +488,7 @@ int exec(char *arg[], int argS) // arg would look like [exec, p1, p2, p3, Policy
         {
             for (int j = 0; j < i; j++) // for each pcb
             {
-                myFree(l[j]); // de retour
+                myFree(l[j]);
             }
             return badcommandFileDoesNotExist();
         }
@@ -505,25 +499,23 @@ int exec(char *arg[], int argS) // arg would look like [exec, p1, p2, p3, Policy
         }
 
         rewind(f);
-        // program *p1 = malloc(sizeof(program) + count * sizeof(char *));
-        // p1->numOfLines = count;
+
         int numPages = (count + 2) / 3;
 
         pcb *pcb1 = malloc(sizeof(pcb));
         pcb1->fileName = arg[i + 1];
         pcb1->numOfCmd = count;
         pcb1->pageTable = malloc(numPages * sizeof(int)); // equivalent to ceilling div
-        for (int i = 0; i < numPages; i++)
+        for (int i = 0; i < numPages; i++)                // init page table
         {
             pcb1->pageTable[i] = -1;
         }
         pcb1->pid = pid++;
         pcb1->index = 0; // program counter, current line
-        // pcb1->p = p1;
         pcb1->score = pcb1->numOfCmd;
         pcb1->next = NULL;
-        // int x = count / 3; // for exampel, 5 /3 = 1
-        char *triplet[3];
+
+        char *triplet[3];                    // store the 3 lines that make up a page
         int one_page = 0;                    // in case of one-page program
         for (int page = 0; page < 2; page++) // load the first 2 pages
         {
@@ -540,7 +532,7 @@ int exec(char *arg[], int argS) // arg would look like [exec, p1, p2, p3, Policy
                     one_page = 1;
                 }
             }
-            pcb1->pageTable[page] = fS_set_value(triplet);
+            pcb1->pageTable[page] = fS_set_value(triplet); // store program lines into frame store
             if (one_page)
             {
                 break;
@@ -761,7 +753,7 @@ int run(char *input[])
     return 0;
 }
 
-int source(char *script)
+int source(char *script) // same logic as in scheduler, except the loop is removed since there is only 1 program
 {
     int errCode = 0;
     char line[MAX_USER_INPUT];
@@ -792,24 +784,6 @@ int source(char *script)
     pcb1->next = NULL;
     pcb1->score = count;
 
-    // for (int page = 0; page < numPages; page++)
-    // {
-    //     char *triplet[3];
-    //     for (int off = 0; off < 3; off++)
-    //     {
-    //         if (fgets(line, MAX_USER_INPUT - 1, p) != NULL)
-    //         {
-    //             triplet[off] = strdup(line);
-    //         }
-    //         else
-    //         {
-    //             triplet[off] = strdup("");
-    //         }
-    //     }
-    //     pcb1->pageTable[page] = fS_set_value(triplet);
-    // }
-    // fclose(p);
-
     char *triplet[3];
     int one_page = 0;                    // in case of one-page program
     for (int page = 0; page < 2; page++) // load the first 2 pages
@@ -837,11 +811,6 @@ int source(char *script)
 
     while (pcb1->index < pcb1->numOfCmd)
     {
-        // int phyIndex = pcb1->pageTable[pcb1->index / 3] + (pcb1->index % 3);
-        // char *cmd = fS_getter(phyIndex, t); // do it later
-        // errCode = parseInput(cmd);
-        // free(cmd);
-        // pcb1->index++;
 
         int ind = pcb1->pageTable[(pcb1->index) / 3];
         if (ind == -1) // page not found
@@ -883,7 +852,6 @@ int source(char *script)
             t++;
 
             fclose(f);
-            // break;
             continue;
         }
         // else

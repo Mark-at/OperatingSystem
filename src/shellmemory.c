@@ -40,11 +40,11 @@ void mem_init()
         shellmemory[i].var = "none";
         shellmemory[i].value = "none";
     }
-    for (i = 0; i < fS_lines; i++)
+    for (i = 0; i < fS_lines; i++) // initialize frame store
     {
-        fS[i] = NULL; // GD
+        fS[i] = NULL;
     }
-    for (i = 0; i < fS_lines / 3; i++)
+    for (i = 0; i < fS_lines / 3; i++) // initialize the table storing the last time a page is accessed
     {
         lruCounter[i] = 0;
     }
@@ -77,8 +77,9 @@ void mem_set_value(char *var_in, char *value_in)
 
     return;
 }
-int fS_set_value(char *tripletVal[])
-{ // Ins say: assume fS is large enough, meaning we will find a spot
+int fS_set_value(char *tripletVal[]) // takes 3 lines of program code as triplet and store them to frame store
+// returns the index (which is a multiple of 3) of the first line of that page in frame store
+{
     int ptEntry = -2;
     for (int i = 0; i < fS_lines; i += 3)
     {
@@ -124,7 +125,7 @@ int fS_evict()
             frame = i; // tells you which frame is the least recently used
         }
     }
-    int line = 3 * frame; // which line in framestore
+    int line = 3 * frame; // index of the first line of that frame in framestore
 
     printf("%s", fS[line]);
     fS[line] = NULL;
@@ -134,7 +135,7 @@ int fS_evict()
 
     printf("%s", fS[line + 2]);
     fS[line + 2] = NULL;
-    return line; // physical line index of the newly available frame block
+    return line;
 }
 
 // get value based on input key

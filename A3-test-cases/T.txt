@@ -1,17 +1,12 @@
-Frame Store Size = 6; Variable Store Size = 10
-P8L1
-P8L2
-P8L3
-P8L4
-P8L5
-P8L6
-Page fault! Victim page contents:
-
-echo P8L1
-echo P8L2
-echo P8L3
-
-End of victim page contents.
-P8L7
-P8L8
+Frame Store Size = 18; Variable Store Size = 10
+P1L1
+P1L2
+OOP2L1OO
+OOP2L2OO
+OOOOP3L1OOOO
+OOOOP3L2OOOO
+OOP2L3OO
+OOP2L4OO
+OOOOP3L3OOOO
+OOP2L5OO
 Bye!
